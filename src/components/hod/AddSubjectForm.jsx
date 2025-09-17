@@ -67,11 +67,11 @@ export default function AddSubjectForm() {
     try {
       const token = await getToken();
 
-      // Extract dept code from subject code (e.g. 20EC54I → EC)
-      const codeDept = form.code.match(/[A-Z]{2,3}/)?.[0];
+      // Extract dept code from subject code (e.g. 20EC54I → EC, 20AT11T → AT)
+      const codeDept = form.code.match(/^\d{2}([A-Z]{2,3})\d{2,3}[A-Z]?$/i)?.[1];
 
       if (!codeDept) {
-        throw new Error("❌ Invalid subject code format");
+        throw new Error("❌ Invalid subject code format. Expected format: 20CS123, 20AT11T, etc.");
       }
 
       // Restrict HODs
