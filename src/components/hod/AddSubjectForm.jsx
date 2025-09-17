@@ -34,6 +34,9 @@ export default function AddSubjectForm() {
   });
   const [status, setStatus] = useState(null);
 
+  // 🔄 state to trigger refresh of table
+  const [refreshKey, setRefreshKey] = useState(0);
+
   // 🔒 Auto-lock department if user is HOD
   useEffect(() => {
     if (myRole === "hod" && myDept) {
@@ -104,12 +107,17 @@ export default function AddSubjectForm() {
       );
 
       toast.success("✅ Subject added successfully!");
+
+      // reset form
       setForm({
         code: "",
         name: "",
         semester: "",
         departments: myRole === "hod" && myDept ? [myDept] : [],
       });
+
+      // 🔄 trigger table refresh
+      setRefreshKey((k) => k + 1);
     } catch (err) {
       console.error(err);
       toast.error(err.message || "❌ Failed to add subject");
@@ -191,7 +199,9 @@ export default function AddSubjectForm() {
           Add Subject
         </button>
       </form>
-      <SubjectTable />
+
+      {/* pass refreshKey */}
+      <SubjectTable refreshKey={refreshKey} />
     </section>
   );
 }
