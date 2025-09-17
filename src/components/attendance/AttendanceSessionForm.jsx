@@ -11,17 +11,13 @@ export default function AttendanceSessionForm({ onCreated }) {
   const { user } = useUser();
 
   const [subjects, setSubjects] = useState([]);
-  const [students, setStudents] = useState([]);
-  const [lecturers, setLecturers] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // form state
   const [form, setForm] = useState({
     date: "",
     startTime: "",
     endTime: "",
     subjectId: "",
-    lecturerId: "",
     semester: "",
     department: "",
     room: "",
@@ -31,53 +27,30 @@ export default function AttendanceSessionForm({ onCreated }) {
   const myRole = user?.publicMetadata?.role;
   const myDept = user?.publicMetadata?.department;
 
-  // Lock department if user is HOD
+  // Lock department if HOD
   useEffect(() => {
     if (myRole === "hod" && myDept) {
       setForm((f) => ({ ...f, department: myDept }));
     }
   }, [myRole, myDept]);
 
+  // Load subjects whenever sem + dept selected
   useEffect(() => {
-    const load = async () => {
-      try {
-        const token = await getToken();
-        const [subRes, usersRes] = await Promise.all([
-          axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/subjects/getsubjects`, {
-            headers: { Authorization: `Bearer ${token}` },
-          }),
-          axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/users/getusers`, {
-            headers: { Authorization: `Bearer ${token}` },
-          }),
-        ]);
-
-        setSubjects(subRes.data.data || []);
-        const allUsers = usersRes.data.data || [];
-        setLecturers(allUsers.filter((u) => ["staff", "hod"].includes(u.role)));
-      } catch (err) {
-        console.error("Error loading data:", err);
-        toast.error("Failed to load subjects/lecturers");
-      }
-    };
-    load();
-  }, [getToken]);
-
-  // load students once sem + dept are selected
-  useEffect(() => {
-    const loadStudents = async () => {
+    const loadSubjects = async () => {
       if (!form.department || !form.semester) return;
       try {
         const token = await getToken();
         const res = await axios.get(
-          `${process.env.NEXT_PUBLIC_API_URL}/api/students/getstudents?department=${form.department}&semester=${form.semester}`,
+          `${process.env.NEXT_PUBLIC_API_URL}/api/subjects/getsubjects?department=${form.department}&semester=${form.semester}`,
           { headers: { Authorization: `Bearer ${token}` } }
         );
-        setStudents(res.data.data || []);
+        setSubjects(res.data.data || []);
       } catch (err) {
-        console.error("Error loading students:", err);
+        console.error("Error loading subjects:", err);
+        toast.error("Failed to load subjects");
       }
     };
-    loadStudents();
+    loadSubjects();
   }, [form.department, form.semester, getToken]);
 
   const handleChange = (e) => {
@@ -87,12 +60,12 @@ export default function AttendanceSessionForm({ onCreated }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
     if (
       !form.date ||
       !form.startTime ||
       !form.endTime ||
       !form.subjectId ||
-      !form.lecturerId ||
       !form.semester ||
       !form.department
     ) {
@@ -103,15 +76,16 @@ export default function AttendanceSessionForm({ onCreated }) {
     try {
       setLoading(true);
       const token = await getToken();
+
       const payload = {
         date: form.date,
         timeSlot: `${form.startTime}-${form.endTime}`,
         subjectId: form.subjectId,
-        lecturerId: form.lecturerId,
         semester: Number(form.semester),
         department: form.department,
         room: form.room,
         notes: form.notes,
+        lecturerId: user?.id, // ✅ auto from Clerk
       };
 
       const res = await axios.post(
@@ -121,17 +95,18 @@ export default function AttendanceSessionForm({ onCreated }) {
       );
 
       toast.success(res.data?.message || "Session created ✅");
+
       setForm({
         date: "",
         startTime: "",
         endTime: "",
         subjectId: "",
-        lecturerId: "",
         semester: "",
         department: myRole === "hod" ? myDept : "",
         room: "",
         notes: "",
       });
+
       if (onCreated) onCreated(res.data.data || res.data);
     } catch (err) {
       console.error("Error creating session:", err);
@@ -164,8 +139,11 @@ export default function AttendanceSessionForm({ onCreated }) {
       {loading && <LoaderOverlay message="Creating session..." />}
       <h3 className="text-lg font-semibold mb-3">Create Attendance Session</h3>
 
-      <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        {/* Date dropdown */}
+      <form
+        onSubmit={handleSubmit}
+        className="grid grid-cols-1 md:grid-cols-3 gap-3"
+      >
+        {/* Date */}
         <input
           type="date"
           name="date"
@@ -175,7 +153,7 @@ export default function AttendanceSessionForm({ onCreated }) {
           className="border px-2 py-1 rounded"
         />
 
-        {/* Start time dropdown */}
+        {/* Start Time */}
         <select
           name="startTime"
           value={form.startTime}
@@ -191,7 +169,7 @@ export default function AttendanceSessionForm({ onCreated }) {
           ))}
         </select>
 
-        {/* End time dropdown */}
+        {/* End Time */}
         <select
           name="endTime"
           value={form.endTime}
@@ -203,40 +181,6 @@ export default function AttendanceSessionForm({ onCreated }) {
           {times.map((t) => (
             <option key={t} value={t}>
               {t}
-            </option>
-          ))}
-        </select>
-
-        {/* Subjects filtered by dept */}
-        <select
-          name="subjectId"
-          value={form.subjectId}
-          onChange={handleChange}
-          required
-          className="border px-2 py-1 rounded col-span-1 md:col-span-2"
-        >
-          <option value="">Select subject</option>
-          {subjects
-            .filter((s) => !form.department || s.department === form.department)
-            .map((s) => (
-              <option key={s._id} value={s._id}>
-                {s.code} — {s.name} (Sem {s.semester})
-              </option>
-            ))}
-        </select>
-
-        {/* Lecturer */}
-        <select
-          name="lecturerId"
-          value={form.lecturerId}
-          onChange={handleChange}
-          required
-          className="border px-2 py-1 rounded"
-        >
-          <option value="">Select lecturer</option>
-          {lecturers.map((l) => (
-            <option key={l._id} value={l._id}>
-              {l.name} {l.department ? `(${l.department})` : ""}
             </option>
           ))}
         </select>
@@ -270,6 +214,22 @@ export default function AttendanceSessionForm({ onCreated }) {
           {departments.map((d) => (
             <option key={d.value} value={d.value}>
               {d.label}
+            </option>
+          ))}
+        </select>
+
+        {/* Subjects (filtered) */}
+        <select
+          name="subjectId"
+          value={form.subjectId}
+          onChange={handleChange}
+          required
+          className="border px-2 py-1 rounded col-span-1 md:col-span-2"
+        >
+          <option value="">Select subject</option>
+          {subjects.map((s) => (
+            <option key={s._id} value={s._id}>
+              {s.code} — {s.name} (Sem {s.semester})
             </option>
           ))}
         </select>
