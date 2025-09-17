@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import axios from "axios";
-import { useAuth } from "@clerk/nextjs";
+import { useAuth, useUser } from "@clerk/nextjs";
 import { toast } from "sonner";
 import { Upload, Image as ImageIcon } from "lucide-react";
 import LoaderOverlay from "../LoaderOverlay";
@@ -22,16 +22,28 @@ const departments = [
 
 export default function AddStaffForm() {
   const { getToken } = useAuth();
+  const { user } = useUser();
+
+  const myRole = user?.publicMetadata?.role;
+  const myDept = user?.publicMetadata?.department;
+
   const [form, setForm] = useState({
     name: "",
     email: "",
     phone: "",
     department: "",
-    role: "staff", // always staff
+    role: "staff",
     image: null,
   });
   const [status, setStatus] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  // 🔒 Auto-lock department if user is HOD
+  useEffect(() => {
+    if (myRole === "hod" && myDept) {
+      setForm((f) => ({ ...f, department: myDept }));
+    }
+  }, [myRole, myDept]);
 
   const handleChange = (e) => {
     const { name, value, files } = e.target;
@@ -47,14 +59,14 @@ export default function AddStaffForm() {
     setStatus("saving");
 
     try {
-      // Transform data (uppercase except email)
+      // Transform data (uppercase except email, role, dept)
       const transformedForm = Object.fromEntries(
         Object.entries(form).map(([key, value]) => {
           if (
             typeof value === "string" &&
             key !== "email" &&
-            key !== "role" && // role is fixed anyway
-            key !== "department" // if you want to keep department lowercase for backend
+            key !== "role" &&
+            key !== "department"
           ) {
             return [key, value.toUpperCase()];
           }
@@ -84,16 +96,14 @@ export default function AddStaffForm() {
         name: "",
         email: "",
         phone: "",
-        department: "",
+        department: myRole === "hod" ? myDept : "",
         role: "staff",
         image: null,
       });
       setRefreshKey((prev) => prev + 1);
     } catch (err) {
       console.error(err);
-      const message =
-        err.response?.data?.message || "❌ Failed to add staff member";
-      toast.error(message);
+      toast.error(err.response?.data?.message || "❌ Failed to add staff member");
     } finally {
       setStatus(null);
     }
@@ -140,13 +150,14 @@ export default function AddStaffForm() {
           className="block w-full rounded-md border px-3 py-2"
         />
 
-        {/* Department */}
+        {/* Department (locked if HOD) */}
         <select
           name="department"
           value={form.department}
           onChange={handleChange}
           required
-          className="block w-full rounded-md border px-3 py-2"
+          disabled={myRole === "hod"}
+          className="block w-full rounded-md border px-3 py-2 bg-gray-50"
         >
           <option value="">Select a department</option>
           {departments.map((dept) => (
