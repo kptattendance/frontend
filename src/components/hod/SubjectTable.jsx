@@ -1,4 +1,5 @@
 "use client";
+import { useUser } from "@clerk/nextjs";
 
 import React, { useEffect, useState } from "react";
 import axios from "axios";
@@ -9,6 +10,7 @@ import LoaderOverlay from "../LoaderOverlay";
 
 export default function SubjectTable({ refreshKey }) {
   const { getToken } = useAuth();
+  const { user } = useUser();
 
   const [subjects, setSubjects] = useState([]);
   const [filtered, setFiltered] = useState([]);
@@ -29,19 +31,28 @@ export default function SubjectTable({ refreshKey }) {
   const pageSize = 5;
 
   // Fetch subjects
+
   const fetchSubjects = async () => {
     try {
       setLoading(true);
       const token = await getToken();
 
-      const res = await axios.get(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/subjects/getsubjects`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const department = user?.publicMetadata?.department || null;
+      const role = user?.publicMetadata?.role || "user";
+
+      let url = `${process.env.NEXT_PUBLIC_API_URL}/api/subjects/getsubjects`;
+
+      // If user is NOT admin, filter by department
+      if (role !== "admin" && department) {
+        url += `?department=${department}`;
+      }
+
+      const res = await axios.get(url, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
       setSubjects(res.data.data);
     } catch (err) {
-      console.error("Error fetching subjects:", err);
       toast.error("❌ Failed to fetch subjects");
     } finally {
       setLoading(false);

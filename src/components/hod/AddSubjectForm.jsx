@@ -1,117 +1,197 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import axios from "axios";
-import { useAuth } from "@clerk/nextjs";
+import { useAuth, useUser } from "@clerk/nextjs";
 import { toast } from "sonner";
-import SubjectTable from "./SubjectTable";
 import LoaderOverlay from "../LoaderOverlay";
+import SubjectTable from "./SubjectTable";
 
-export default function SubjectForm() {
+const departments = [
+  { value: "AT", label: "Automobile Engineering" },
+  { value: "CH", label: "Chemical Engineering" },
+  { value: "CE", label: "Civil Engineering" },
+  { value: "CS", label: "Computer Science Engineering" },
+  { value: "EC", label: "Electronics & Communication Engineering" },
+  { value: "EEE", label: "Electrical & Electronics Engineering" },
+  { value: "ME", label: "Mechanical Engineering" },
+  { value: "PO", label: "Polymer Engineering" },
+  { value: "SC", label: "Science and English" },
+];
+
+export default function AddSubjectForm() {
   const { getToken } = useAuth();
+  const { user } = useUser();
+
+  const myRole = user?.publicMetadata?.role;
+  const myDept = user?.publicMetadata?.department?.toUpperCase();
 
   const [form, setForm] = useState({
     code: "",
     name: "",
     semester: "",
+    departments: [],
   });
+  const [status, setStatus] = useState(null);
 
-  const [loading, setLoading] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0); // 🔑 triggers SubjectTable reload
+  // 🔒 Auto-lock department if user is HOD
+  useEffect(() => {
+    if (myRole === "hod" && myDept) {
+      setForm((f) => ({ ...f, departments: [myDept] }));
+    }
+  }, [myRole, myDept]);
 
   const handleChange = (e) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+    setForm({ ...form, [name]: value });
+  };
+
+  const handleDepartmentsChange = (e) => {
+    const { options } = e.target;
+    const selected = [];
+    for (let i = 0; i < options.length; i++) {
+      if (options[i].selected) {
+        selected.push(options[i].value);
+      }
+    }
+    setForm({ ...form, departments: selected });
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setStatus("saving");
+
     try {
-      setLoading(true);
       const token = await getToken();
 
+      // Extract dept code from subject code (e.g. 20EC54I → EC)
+      const codeDept = form.code.match(/[A-Z]{2,3}/)?.[0];
+
+      if (!codeDept) {
+        throw new Error("❌ Invalid subject code format");
+      }
+
+      // Restrict HODs
+      if (myRole === "hod") {
+        if (myDept !== codeDept) {
+          throw new Error(
+            `❌ You are ${myDept} HOD. You can only add subjects with code containing "${myDept}", but you entered "${codeDept}".`
+          );
+        }
+        if (!form.departments.includes(myDept)) {
+          throw new Error(
+            `❌ Department must be locked to ${myDept}. Cannot assign other departments.`
+          );
+        }
+      }
+
       const payload = {
+        ...form,
         code: form.code.toUpperCase(),
-        name: form.name.toUpperCase(),
-        semester: form.semester,
+        name: form.name.trim(),
+        semester: Number(form.semester),
+        departments: form.departments.map((d) => d.toUpperCase()),
       };
 
-      const res = await axios.post(
+      await axios.post(
         `${process.env.NEXT_PUBLIC_API_URL}/api/subjects/addsubject`,
         payload,
-        { headers: { Authorization: `Bearer ${token}` } }
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
       );
 
-      toast.success(res.data?.message || "✅ Subject added");
-      setForm({ code: "", name: "", semester: "" });
-
-      // 🔄 refresh table
-      setRefreshKey((prev) => prev + 1);
+      toast.success("✅ Subject added successfully!");
+      setForm({
+        code: "",
+        name: "",
+        semester: "",
+        departments: myRole === "hod" && myDept ? [myDept] : [],
+      });
     } catch (err) {
-      console.error("Error adding subject:", err);
-      toast.error(err.response?.data?.message || "❌ Failed to add subject");
+      console.error(err);
+      toast.error(err.message || "❌ Failed to add subject");
     } finally {
-      setLoading(false);
+      setStatus(null);
     }
   };
 
   return (
-    <>
-      {loading && <LoaderOverlay message="Adding Subject..." />}
+    <section className="relative">
+      {status === "saving" && <LoaderOverlay message="Adding subject..." />}
 
+      <h2 className="text-2xl font-semibold mb-4">Add Subject</h2>
       <form
         onSubmit={handleSubmit}
-        className="p-4 rounded-lg shadow-sm mb-6 bg-white text-sm"
+        className="space-y-4 bg-white p-6 rounded-lg shadow"
       >
-        <h2 className="text-lg font-semibold mb-3">Add Subject</h2>
+        {/* Code */}
+        <input
+          name="code"
+          value={form.code}
+          onChange={handleChange}
+          placeholder="Subject code (e.g., 20EC54I)"
+          required
+          className="block w-full rounded-md border px-3 py-2"
+        />
 
-        <div className="grid md:grid-cols-3 gap-3">
+        {/* Name */}
+        <input
+          name="name"
+          value={form.name}
+          onChange={handleChange}
+          placeholder="Subject name"
+          required
+          className="block w-full rounded-md border px-3 py-2"
+        />
+
+        {/* Semester */}
+        <input
+          name="semester"
+          type="number"
+          value={form.semester}
+          onChange={handleChange}
+          placeholder="Semester (1-8)"
+          min="1"
+          max="8"
+          required
+          className="block w-full rounded-md border px-3 py-2"
+        />
+
+        {/* Departments */}
+        {myRole === "hod" ? (
           <input
-            type="text"
-            name="code"
-            placeholder="Subject Code"
-            value={form.code}
-            onChange={handleChange}
-            required
-            disabled={loading}
-            className="border p-2 rounded disabled:bg-gray-100"
+            value={myDept}
+            disabled
+            className="block w-full rounded-md border px-3 py-2 bg-gray-100"
           />
-          <input
-            type="text"
-            name="name"
-            placeholder="Subject Name"
-            value={form.name}
-            onChange={handleChange}
-            required
-            disabled={loading}
-            className="border p-2 rounded disabled:bg-gray-100"
-          />
+        ) : (
           <select
-            name="semester"
-            value={form.semester}
-            onChange={handleChange}
+            name="departments"
+            multiple
+            value={form.departments}
+            onChange={handleDepartmentsChange}
             required
-            disabled={loading}
-            className="border p-2 rounded disabled:bg-gray-100"
+            className="block w-full rounded-md border px-3 py-2 bg-gray-50"
           >
-            <option value="">Select Semester</option>
-            {[1, 2, 3, 4, 5, 6].map((sem) => (
-              <option key={sem} value={sem}>
-                Semester {sem}
+            {departments.map((dept) => (
+              <option key={dept.value} value={dept.value}>
+                {dept.label}
               </option>
             ))}
           </select>
-        </div>
+        )}
 
         <button
           type="submit"
-          disabled={loading}
-          className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg"
         >
           Add Subject
         </button>
       </form>
-
-      <SubjectTable refreshKey={refreshKey} />
-    </>
+      <SubjectTable />
+    </section>
   );
 }

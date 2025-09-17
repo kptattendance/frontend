@@ -103,7 +103,9 @@ export default function AddStaffForm() {
       setRefreshKey((prev) => prev + 1);
     } catch (err) {
       console.error(err);
-      toast.error(err.response?.data?.message || "❌ Failed to add staff member");
+      toast.error(
+        err.response?.data?.message || "❌ Failed to add staff member"
+      );
     } finally {
       setStatus(null);
     }
